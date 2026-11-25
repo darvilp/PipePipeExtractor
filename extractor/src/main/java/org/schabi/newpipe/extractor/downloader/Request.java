@@ -26,6 +26,7 @@ public class Request {
     @Nullable
     private final Localization localization;
     private final boolean followRedirects;
+    private final boolean followSslRedirects;
 
     public Request(final String httpMethod,
                    final String url,
@@ -33,7 +34,8 @@ public class Request {
                    @Nullable final byte[] dataToSend,
                    @Nullable final Localization localization,
                    final boolean automaticLocalizationHeader) {
-        this(httpMethod, url, headers, dataToSend, localization, automaticLocalizationHeader, true);
+        this(httpMethod, url, headers, dataToSend, localization, automaticLocalizationHeader,
+                true, true);
     }
 
     private Request(final String httpMethod,
@@ -42,7 +44,8 @@ public class Request {
                     @Nullable final byte[] dataToSend,
                     @Nullable final Localization localization,
                     final boolean automaticLocalizationHeader,
-                    final boolean followRedirects) {
+                    final boolean followRedirects,
+                    final boolean followSslRedirects) {
         if (httpMethod == null) {
             throw new IllegalArgumentException("Request's httpMethod is null");
         }
@@ -55,6 +58,7 @@ public class Request {
         this.dataToSend = dataToSend;
         this.localization = localization;
         this.followRedirects = followRedirects;
+        this.followSslRedirects = followRedirects && followSslRedirects;
 
         final Map<String, List<String>> actualHeaders = new LinkedHashMap<>();
         if (headers != null) {
@@ -69,7 +73,8 @@ public class Request {
 
     private Request(final Builder builder) {
         this(builder.httpMethod, builder.url, builder.headers, builder.dataToSend,
-                builder.localization, builder.automaticLocalizationHeader, builder.followRedirects);
+                builder.localization, builder.automaticLocalizationHeader, builder.followRedirects,
+                builder.followSslRedirects);
     }
 
     /**
@@ -121,6 +126,11 @@ public class Request {
         return followRedirects;
     }
 
+    /** Whether redirects may change between HTTP and HTTPS. */
+    public boolean followSslRedirects() {
+        return followSslRedirects;
+    }
+
     public static Builder newBuilder() {
         return new Builder();
     }
@@ -133,6 +143,7 @@ public class Request {
         private Localization localization;
         private boolean automaticLocalizationHeader = true;
         private boolean followRedirects = true;
+        private boolean followSslRedirects = true;
 
         public Builder() {
         }
@@ -202,6 +213,10 @@ public class Request {
             return this;
         }
 
+        public Builder followSslRedirects(final boolean followSslRedirectsToSet) {
+            this.followSslRedirects = followSslRedirectsToSet;
+            return this;
+        }
 
         public Request build() {
             return new Request(this);

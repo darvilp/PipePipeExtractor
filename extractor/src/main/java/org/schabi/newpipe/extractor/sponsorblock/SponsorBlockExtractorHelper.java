@@ -8,9 +8,11 @@ import com.grack.nanojson.JsonParserException;
 import org.schabi.newpipe.extractor.NewPipe;
 import org.schabi.newpipe.extractor.ServiceList;
 import org.schabi.newpipe.extractor.StreamingService;
+import org.schabi.newpipe.extractor.downloader.Request;
 import org.schabi.newpipe.extractor.downloader.Response;
 import org.schabi.newpipe.extractor.exceptions.ParsingException;
 import org.schabi.newpipe.extractor.exceptions.AntiBotException;
+import org.schabi.newpipe.extractor.localization.Localization;
 import org.schabi.newpipe.extractor.services.bilibili.BilibiliService;
 import org.schabi.newpipe.extractor.stream.StreamExtractor;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
@@ -102,8 +104,7 @@ public final class SponsorBlockExtractorHelper {
         JsonArray responseArray = null;
 
         try {
-            final String responseBody = NewPipe.getDownloader()
-                    .get(url, biliBili ? BilibiliService.getSponsorBlockHeaders() : null)
+            final String responseBody = executeHttps(Request.newBuilder().get(url), biliBili)
                     .responseBody();
 
             responseArray = JsonParser.array().from(responseBody);
@@ -189,8 +190,7 @@ public final class SponsorBlockExtractorHelper {
                 // bsbsb.top (BiliBili SponsorBlock) rejects unknown query parameters
                 + (biliBili ? "" : "&userAgent=PipePipe/1.1.0")
                 + "&actionType=" + actionType;
-        return NewPipe.getDownloader().post(url,
-                biliBili ? BilibiliService.getSponsorBlockHeaders() : null, new byte[0]);
+        return executeHttps(Request.newBuilder().post(url, new byte[0]), biliBili);
     }
 
     public static Response submitSponsorBlockSegmentVote(final SponsorBlockSegment segment,
@@ -221,8 +221,21 @@ public final class SponsorBlockExtractorHelper {
                 + "&userID=" + userId
                 + "&type=" + vote;
 
-        return NewPipe.getDownloader().post(url,
-                biliBili ? BilibiliService.getSponsorBlockHeaders() : null, new byte[0]);
+        return executeHttps(Request.newBuilder().post(url, new byte[0]), biliBili);
+    }
+
+    private static Response executeHttps(final Request.Builder request, final boolean biliBili)
+            throws IOException, AntiBotException {
+        final Request built = request
+                .headers(biliBili ? BilibiliService.getSponsorBlockHeaders() : null)
+                .localization(Localization.DEFAULT)
+                .followSslRedirects(false)
+                .build();
+        final HttpUrl url = HttpUrl.parse(built.url());
+        if (url == null || !url.isHttps()) {
+            throw new IOException("SponsorBlock requires an HTTPS URL");
+        }
+        return NewPipe.getDownloader().execute(built);
     }
 
     public static String getApiUrl(StreamInfo streamInfo) {
