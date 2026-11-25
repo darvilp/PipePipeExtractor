@@ -21,7 +21,11 @@ import java.io.UnsupportedEncodingException;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 
+import okhttp3.HttpUrl;
+
 public final class SponsorBlockExtractorHelper {
+    private static final String YOUTUBE_API_URL = "https://sponsor.ajay.app/api/";
+    private static final String BILIBILI_API_URL = "https://bsbsb.top/api/";
 
     private SponsorBlockExtractorHelper() {
     }
@@ -85,18 +89,22 @@ public final class SponsorBlockExtractorHelper {
             return new SponsorBlockSegment[0];
         }
 
-        final String apiUrl = getApiUrl(extractor.getServiceId());
+        final int serviceId = extractor.getServiceId();
+        final String apiUrl = getApiUrl(serviceId, apiSettings);
+        final boolean biliBili = isBiliBili(serviceId);
         // bsbsb.top (BiliBili SponsorBlock) rejects unknown query parameters,
         // while sponsor.ajay.app requires the userAgent one.
         final String url = apiUrl + "skipSegments/" + videoIdHash.substring(0, 4)
                 + "?categories=" + categoryParams
                 + "&actionTypes=" + actionParams
-                + (apiUrl.contains("bsbsb.top") ? "" : "&userAgent=Mozilla/5.0");
+                + (biliBili ? "" : "&userAgent=Mozilla/5.0");
 
         JsonArray responseArray = null;
 
         try {
-            final String responseBody = NewPipe.getDownloader().get(url, url.contains("bsbsb.top")? BilibiliService.getSponsorBlockHeaders(): null).responseBody();
+            final String responseBody = NewPipe.getDownloader()
+                    .get(url, biliBili ? BilibiliService.getSponsorBlockHeaders() : null)
+                    .responseBody();
 
             responseArray = JsonParser.array().from(responseBody);
         } catch (AntiBotException | IOException | JsonParserException e) {
@@ -140,7 +148,7 @@ public final class SponsorBlockExtractorHelper {
                         new SponsorBlockSegment(uuid, startTime, endTime,
                                 SponsorBlockCategory.fromApiName(category),
                                 SponsorBlockAction.fromApiName(action),
-                                extractor.getServiceId());
+                                serviceId, apiUrl);
                 result.add(sponsorBlockSegment);
             }
         }
@@ -170,6 +178,7 @@ public final class SponsorBlockExtractorHelper {
         final double endInSeconds = segment.category == SponsorBlockCategory.HIGHLIGHT
                 ? startInSeconds
                 : segment.endTime / 1000.0;
+        final boolean biliBili = isBiliBili(streamInfo.getServiceId());
 
         final String url = apiUrl + "skipSegments?"
                 + "videoID=" + videoId
@@ -178,9 +187,18 @@ public final class SponsorBlockExtractorHelper {
                 + "&category=" + segment.category.getApiName()
                 + "&userID=" + userId
                 // bsbsb.top (BiliBili SponsorBlock) rejects unknown query parameters
-                + (apiUrl.contains("bsbsb.top") ? "" : "&userAgent=PipePipe/1.1.0")
+                + (biliBili ? "" : "&userAgent=PipePipe/1.1.0")
                 + "&actionType=" + actionType;
-        return NewPipe.getDownloader().post(url, apiUrl.contains("bsbsb.top")? BilibiliService.getSponsorBlockHeaders(): null, new byte[0]);
+        return NewPipe.getDownloader().post(url,
+                biliBili ? BilibiliService.getSponsorBlockHeaders() : null, new byte[0]);
+    }
+
+    public static Response submitSponsorBlockSegmentVote(final SponsorBlockSegment segment,
+                                                        final int vote,
+                                                        final String userId)
+            throws IOException, AntiBotException {
+        return submitSponsorBlockSegmentVote(segment.uuid, getVoteApiUrl(segment), vote,
+                userId, isBiliBili(segment.serviceId));
     }
 
     public static Response submitSponsorBlockSegmentVote(final String uuid,
@@ -188,12 +206,23 @@ public final class SponsorBlockExtractorHelper {
                                                           final int vote,
                                                           final String userId)
             throws IOException, AntiBotException {
+        return submitSponsorBlockSegmentVote(uuid, apiUrl, vote, userId,
+                apiUrl.contains("bsbsb.top"));
+    }
+
+    private static Response submitSponsorBlockSegmentVote(final String uuid,
+                                                         final String apiUrl,
+                                                         final int vote,
+                                                         final String userId,
+                                                         final boolean biliBili)
+            throws IOException, AntiBotException {
         final String url = apiUrl + "voteOnSponsorTime?"
                 + "UUID=" + uuid
                 + "&userID=" + userId
                 + "&type=" + vote;
 
-        return NewPipe.getDownloader().post(url, apiUrl.contains("bsbsb.top")? BilibiliService.getSponsorBlockHeaders(): null, new byte[0]);
+        return NewPipe.getDownloader().post(url,
+                biliBili ? BilibiliService.getSponsorBlockHeaders() : null, new byte[0]);
     }
 
     public static String getApiUrl(StreamInfo streamInfo) {
@@ -201,12 +230,46 @@ public final class SponsorBlockExtractorHelper {
     }
 
     public static String getApiUrl(int serviceId) {
-        String apiUrl = "https://sponsor.ajay.app/api/";
-        if (serviceId == ServiceList.YouTube.getServiceId()) {
-            apiUrl = "https://sponsor.ajay.app/api/";
-        } else if (serviceId == ServiceList.BiliBili.getServiceId()) {
-            apiUrl = "https://bsbsb.top/api/";
+        final StreamingService service = ServiceList.getById(serviceId);
+        return getApiUrl(serviceId, service == null ? null : service.getSponsorBlockApiSettings());
+    }
+
+    public static String getDefaultApiUrl(final int serviceId) {
+        return isBiliBili(serviceId) ? BILIBILI_API_URL : YOUTUBE_API_URL;
+    }
+
+    public static String getVoteApiUrl(final SponsorBlockSegment segment) {
+        // A cached segment still belongs to the server that supplied its UUID.
+        return segment.sourceApiUrl == null ? getDefaultApiUrl(segment.serviceId)
+                : segment.sourceApiUrl;
+    }
+
+    private static boolean isBiliBili(final int serviceId) {
+        return serviceId == ServiceList.BiliBili.getServiceId();
+    }
+
+    private static String getApiUrl(final int serviceId, final SponsorBlockApiSettings settings) {
+        if (settings != null) {
+            final String override = isBiliBili(serviceId) ? settings.biliBiliApiUrl
+                    : serviceId == ServiceList.YouTube.getServiceId() ? settings.youTubeApiUrl : null;
+            final String normalized = normalizeApiUrl(override);
+            if (normalized != null) {
+                return normalized;
+            }
         }
-        return apiUrl;
+        return getDefaultApiUrl(serviceId);
+    }
+
+    /** Accept a server root or an explicit API base path. A blank value uses the default. */
+    public static String normalizeApiUrl(final String value) {
+        final HttpUrl url = value == null ? null : HttpUrl.parse(value.trim());
+        if (url == null || !url.isHttps() || !url.username().isEmpty()
+                || !url.password().isEmpty() || url.query() != null || url.fragment() != null) {
+            return null;
+        }
+        if ("/".equals(url.encodedPath())) {
+            return url.newBuilder().encodedPath("/api/").build().toString();
+        }
+        return url.encodedPath().endsWith("/") ? url.toString() : url + "/";
     }
 }

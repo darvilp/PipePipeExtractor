@@ -111,7 +111,7 @@ public abstract class StreamingService {
     public InfoItemsCollector.FilterConfig filterConfig = null;
     private CommentsFilterConfig commentsFilterConfig = null;
 
-    public SponsorBlockApiSettings sponsorBlockApiSettings = null;
+    public volatile SponsorBlockApiSettings sponsorBlockApiSettings = null;
     
     private int loadingTimeout = 5;
     private boolean fetchFullPlaylist = false;

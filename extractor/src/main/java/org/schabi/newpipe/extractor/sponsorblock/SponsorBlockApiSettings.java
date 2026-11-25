@@ -2,6 +2,8 @@ package org.schabi.newpipe.extractor.sponsorblock;
 
 public class SponsorBlockApiSettings {
     public String apiUrl;
+    public String youTubeApiUrl;
+    public String biliBiliApiUrl;
     public String userId;
     public boolean includeSponsorCategory;
     public boolean includeIntroCategory;
